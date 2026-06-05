@@ -3,14 +3,14 @@
 import { useEffect, useMemo, useState } from 'react'
 
 const TAIL_STRATEGIES = [
-  { id: 's1', name: '方案1', logic: '热尾主攻', tails: [1, 2, 3, 4, 5, 6, 7, 8] },
-  { id: 's2', name: '方案2', logic: '热尾+遗漏', tails: [0, 1, 2, 3, 5, 6, 7, 8] },
-  { id: 's3', name: '方案3', logic: '均衡稳健', tails: [0, 1, 2, 3, 4, 5, 7, 8] },
-  { id: 's4', name: '方案4', logic: '大尾偏强', tails: [1, 3, 4, 5, 6, 7, 8, 9] },
-  { id: 's5', name: '方案5', logic: '小尾防守', tails: [0, 1, 2, 3, 4, 5, 6, 8] },
-  { id: 's6', name: '方案6', logic: '奇偶均衡', tails: [0, 1, 2, 3, 5, 6, 8, 9] },
-  { id: 's7', name: '方案7', logic: '趋势升温', tails: [1, 2, 3, 4, 5, 7, 8, 9] },
-  { id: 's8', name: '方案8', logic: '冷尾补位', tails: [0, 1, 3, 4, 5, 6, 7, 9] },
+  { id: 's1', name: '方案1', logic: '热尾主攻', tails: [1, 2, 3, 4, 5, 6, 7, 9] },
+  { id: 's2', name: '方案2', logic: '冷尾补位', tails: [0, 1, 3, 4, 5, 6, 7, 9] },
+  { id: 's3', name: '方案3', logic: '大尾偏强', tails: [1, 3, 4, 5, 6, 7, 8, 9] },
+  { id: 's4', name: '方案4', logic: '趋势升温', tails: [1, 2, 3, 5, 6, 7, 8, 9] },
+  { id: 's5', name: '方案5', logic: '奇偶均衡', tails: [0, 1, 3, 4, 5, 6, 8, 9] },
+  { id: 's6', name: '方案6', logic: '遗漏防守', tails: [0, 1, 2, 3, 4, 6, 7, 9] },
+  { id: 's7', name: '方案7', logic: '稳健覆盖', tails: [0, 1, 2, 3, 5, 6, 7, 8] },
+  { id: 's8', name: '方案8', logic: '高频组合', tails: [1, 2, 3, 4, 5, 7, 8, 9] },
   { id: 's9', name: '方案9', logic: '低连错优先', tails: [0, 2, 3, 4, 5, 6, 7, 8] },
   { id: 's10', name: '方案10', logic: '综合最优', tails: [0, 1, 2, 4, 5, 6, 7, 8] },
 ]
@@ -135,6 +135,56 @@ function buildTailHeat(history, size = 50) {
   }))
 }
 
+function buildConsensusTails(ranking, heat) {
+  const scoreMap = new Map(Array.from({ length: 10 }, (_, tail) => [tail, {
+    tail,
+    appear: 0,
+    weight: 0,
+    heatCount: heat.find((item) => item.tail === tail)?.count || 0,
+  }]))
+
+  ranking.slice(0, 10).forEach((strategy, index) => {
+    const rankWeight = 10 - index
+    strategy.tails.forEach((tail) => {
+      const old = scoreMap.get(tail)
+      scoreMap.set(tail, {
+        ...old,
+        appear: old.appear + 1,
+        weight: old.weight + rankWeight,
+      })
+    })
+  })
+
+  const sorted = Array.from(scoreMap.values()).sort((a, b) => {
+    if (b.appear !== a.appear) return b.appear - a.appear
+    if (b.weight !== a.weight) return b.weight - a.weight
+    if (b.heatCount !== a.heatCount) return b.heatCount - a.heatCount
+    return a.tail - b.tail
+  })
+
+  return {
+    tails: sorted.slice(0, 8).map((item) => item.tail).sort((a, b) => a - b),
+    stats: sorted,
+  }
+}
+
+function buildCurrentDrawRows(ranking, latest) {
+  const specialNumber = Number(latest?.specialNumber || latest?.numbers?.[6])
+  const currentTail = getTail(specialNumber)
+
+  return ranking.slice(0, 10).map((strategy, index) => ({
+    rank: index + 1,
+    strategy,
+    currentTail,
+    specialNumber,
+    hit: strategy.tails.includes(currentTail),
+  }))
+}
+
+function buildCopyText(nextExpect, tails) {
+  return `第${nextExpect || '-'}期尾数参考：${tails.join(' ')}`
+}
+
 function TailBadge({ tail, active = false }) {
   return <span className={active ? 'tail-badge active' : 'tail-badge'}>{tail}</span>
 }
@@ -148,6 +198,7 @@ export default function Page() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selectedId, setSelectedId] = useState('')
+  const [copied, setCopied] = useState(false)
 
   async function loadData() {
     setLoading(true)
@@ -173,10 +224,25 @@ export default function Page() {
   const ranking = useMemo(() => buildRanking(history), [history])
   const selected = ranking.find((item) => item.id === selectedId) || ranking[0]
   const heat = useMemo(() => buildTailHeat(history, 50), [history])
+  const consensus = useMemo(() => buildConsensusTails(ranking, heat), [ranking, heat])
+  const currentDrawRows = useMemo(() => buildCurrentDrawRows(ranking, data?.latest), [ranking, data?.latest])
+  const nextTails = consensus.tails.length ? consensus.tails : selected?.tails || []
 
   useEffect(() => {
     if (!selectedId && ranking[0]?.id) setSelectedId(ranking[0].id)
   }, [ranking, selectedId])
+
+  async function copyNextTails() {
+    const text = buildCopyText(data?.nextExpect, nextTails)
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch (error) {
+      setCopied(false)
+      alert(text)
+    }
+  }
 
   return (
     <main className="page">
@@ -200,6 +266,12 @@ export default function Page() {
         .plus { color: #64748b; font-weight: 900; }
         .toolbar { display: flex; gap: 12px; align-items: center; margin: 14px 0 22px; }
         .btn { border: none; border-radius: 999px; padding: 10px 16px; color: #07111f; background: #38bdf8; font-weight: 800; cursor: pointer; }
+        .copy-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .copy-btn { border: 1px solid rgba(250, 204, 21, .6); border-radius: 12px; padding: 10px 14px; color: #0f172a; background: linear-gradient(145deg, #fde047, #f97316); font-weight: 900; cursor: pointer; white-space: nowrap; }
+        .consensus-box { margin-top: 12px; padding: 12px; border-radius: 14px; background: rgba(34, 197, 94, .08); border: 1px solid rgba(34, 197, 94, .25); }
+        .small-table th, .small-table td { font-size: 13px; padding: 10px 8px; }
+        .hit-pill { display: inline-flex; padding: 4px 9px; border-radius: 999px; font-weight: 900; background: rgba(34, 197, 94, .16); color: #4ade80; }
+        .miss-pill { display: inline-flex; padding: 4px 9px; border-radius: 999px; font-weight: 900; background: rgba(239, 68, 68, .14); color: #fb7185; }
         .muted { color: #91a4bf; font-size: 13px; }
         .grid { display: grid; grid-template-columns: 1.5fr .9fr; gap: 18px; align-items: start; }
         .card { padding: 20px; margin-bottom: 18px; overflow: hidden; }
@@ -254,8 +326,14 @@ export default function Page() {
               <div className="next-box">
                 <div className="latest-title">下一期尾数参考</div>
                 <div className="expect">第 {data?.nextExpect || '-'} 期</div>
-                <div className="tail-list">{selected.tails.map((tail) => <TailBadge key={tail} tail={tail} active />)}</div>
-                <p className="muted">当前采用：{selected.name}｜{selected.logic}</p>
+                <div className="copy-row">
+                  <div className="tail-list">{nextTails.map((tail) => <TailBadge key={tail} tail={tail} active />)}</div>
+                  <button className="copy-btn" onClick={copyNextTails}>{copied ? '已复制' : '复制尾数'}</button>
+                </div>
+                <div className="consensus-box">
+                  <p className="muted" style={{ margin: 0 }}>当前采用：10档位综合出现最多尾数｜按方案排名权重 + 出现次数筛选</p>
+                  <p className="muted" style={{ margin: '6px 0 0' }}>备选第一档：{selected.name}｜{selected.logic}</p>
+                </div>
               </div>
             )}
           </div>
@@ -300,6 +378,36 @@ export default function Page() {
               </table>
             </div>
 
+            <div className="card">
+              <h2>10个档位当期开奖统计</h2>
+              <table className="small-table">
+                <thead>
+                  <tr>
+                    <th>排名</th>
+                    <th>档位策略</th>
+                    <th>当期特码</th>
+                    <th>是否命中</th>
+                    <th>20期命中</th>
+                    <th>50期命中</th>
+                    <th>30期连错</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {currentDrawRows.map((row) => (
+                    <tr key={row.strategy.id}>
+                      <td>第{row.rank}名</td>
+                      <td><strong>{row.strategy.logic}</strong><br /><span className="muted">{row.strategy.tails.join(' ')}</span></td>
+                      <td>{String(row.specialNumber || 0).padStart(2, '0')}｜尾{row.currentTail}</td>
+                      <td><span className={row.hit ? 'hit-pill' : 'miss-pill'}>{row.hit ? '命中' : '未中'}</span></td>
+                      <td>{row.strategy.result20.hitCount}/{row.strategy.result20.testedCount} = {fmtPercent(row.strategy.result20.hitRate)}</td>
+                      <td>{row.strategy.result50.hitCount}/{row.strategy.result50.testedCount} = {fmtPercent(row.strategy.result50.hitRate)}</td>
+                      <td>最大{row.strategy.result30.maxMiss}｜当前{row.strategy.result30.currentMiss}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
             {selected && (
               <div className="card">
                 <h2>{selected.name}｜{selected.logic} 明细</h2>
@@ -337,6 +445,18 @@ export default function Page() {
           </div>
 
           <aside>
+            <div className="card">
+              <h2>10档综合尾数出现率</h2>
+              <p className="subtitle">统计当前排行榜前10个档位中，每个尾数被选中的次数。次数越多，下一期参考优先级越高。</p>
+              {consensus.stats.map((item) => (
+                <div className="heat-item" key={item.tail}>
+                  <TailBadge tail={item.tail} active={nextTails.includes(item.tail)} />
+                  <div className="bar"><span style={{ width: `${item.appear * 10}%` }} /></div>
+                  <strong>{item.appear}/10档</strong>
+                </div>
+              ))}
+            </div>
+
             <div className="card">
               <h2>尾数热度排行</h2>
               {heat.slice().sort((a, b) => b.count - a.count).map((item) => (
