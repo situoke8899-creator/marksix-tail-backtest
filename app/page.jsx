@@ -3,17 +3,18 @@
 import { useEffect, useMemo, useState } from 'react'
 
 const TAIL_STRATEGIES = [
-  { id: 's1', name: '方案1', logic: '5热+2冷', tails: [1, 2, 3, 5, 6, 7, 8] },
-  { id: 's2', name: '方案2', logic: '4热+3冷', tails: [1, 3, 4, 6, 7, 8, 9] },
-  { id: 's3', name: '方案3', logic: '纯热尾', tails: [1, 2, 3, 5, 7, 8, 9] },
-  { id: 's4', name: '方案4', logic: '热尾+遗漏王', tails: [0, 1, 3, 4, 5, 7, 8] },
-  { id: 's5', name: '方案5', logic: '趋势升温', tails: [1, 2, 4, 5, 6, 7, 8] },
-  { id: 's6', name: '方案6', logic: '大尾优先', tails: [3, 4, 5, 6, 7, 8, 9] },
-  { id: 's7', name: '方案7', logic: '小尾优先', tails: [0, 1, 2, 3, 4, 5, 6] },
-  { id: 's8', name: '方案8', logic: '奇尾偏重', tails: [1, 3, 5, 6, 7, 8, 9] },
-  { id: 's9', name: '方案9', logic: '偶尾偏重', tails: [0, 2, 3, 4, 5, 6, 8] },
-  { id: 's10', name: '方案10', logic: '均衡覆盖', tails: [0, 1, 2, 4, 5, 7, 9] },
+  { id: 's1', name: '方案1', logic: '热尾主攻', tails: [1, 2, 3, 4, 5, 6, 7, 8] },
+  { id: 's2', name: '方案2', logic: '热尾+遗漏', tails: [0, 1, 2, 3, 5, 6, 7, 8] },
+  { id: 's3', name: '方案3', logic: '均衡稳健', tails: [0, 1, 2, 3, 4, 5, 7, 8] },
+  { id: 's4', name: '方案4', logic: '大尾偏强', tails: [1, 3, 4, 5, 6, 7, 8, 9] },
+  { id: 's5', name: '方案5', logic: '小尾防守', tails: [0, 1, 2, 3, 4, 5, 6, 8] },
+  { id: 's6', name: '方案6', logic: '奇偶均衡', tails: [0, 1, 2, 3, 5, 6, 8, 9] },
+  { id: 's7', name: '方案7', logic: '趋势升温', tails: [1, 2, 3, 4, 5, 7, 8, 9] },
+  { id: 's8', name: '方案8', logic: '冷尾补位', tails: [0, 1, 3, 4, 5, 6, 7, 9] },
+  { id: 's9', name: '方案9', logic: '低连错优先', tails: [0, 2, 3, 4, 5, 6, 7, 8] },
+  { id: 's10', name: '方案10', logic: '综合最优', tails: [0, 1, 2, 4, 5, 6, 7, 8] },
 ]
+
 
 const WINDOWS = [20, 30, 50]
 
@@ -191,6 +192,7 @@ export default function Page() {
         .subtitle { color: #a8bdd8; margin: 0; line-height: 1.7; }
         .latest { width: 390px; padding: 22px; }
         .latest-title { color: #9fb2cc; font-size: 14px; margin-bottom: 10px; }
+        .next-box { margin-top: 18px; padding-top: 18px; border-top: 1px solid rgba(148, 163, 184, .18); }
         .expect { font-size: 24px; font-weight: 800; margin-bottom: 12px; }
         .balls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
         .num-ball { display: inline-flex; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 50%; background: linear-gradient(145deg, #f8fafc, #cbd5e1); color: #0f172a; font-weight: 800; box-shadow: inset 0 -3px 0 rgba(0,0,0,.18); }
@@ -232,7 +234,7 @@ export default function Page() {
         <section className="hero">
           <div className="hero-card">
             <h1>澳门六合彩尾数策略回测系统</h1>
-            <p className="subtitle">不预测下期开奖号，只回测固定尾数组合。系统自动读取历史开奖，分别测试近 20 / 30 / 50 期的命中率、最大连错、当前连错和覆盖率。</p>
+            <p className="subtitle">增加下一期尾数参考，不预测具体开奖号码。系统自动读取历史开奖，分别测试近 20 / 30 / 50 期的命中率、最大连错、当前连错和覆盖率，筛出当前综合排名最高的 8 尾方案。</p>
           </div>
 
           <div className="hero-card latest">
@@ -248,6 +250,14 @@ export default function Page() {
                 <p className="muted">开奖时间：{data.latest.openTime || '-'}</p>
               </>
             ) : <p className="muted">等待加载...</p>}
+            {selected && (
+              <div className="next-box">
+                <div className="latest-title">下一期尾数参考</div>
+                <div className="expect">第 {data?.nextExpect || '-'} 期</div>
+                <div className="tail-list">{selected.tails.map((tail) => <TailBadge key={tail} tail={tail} active />)}</div>
+                <p className="muted">当前采用：{selected.name}｜{selected.logic}</p>
+              </div>
+            )}
           </div>
         </section>
 
@@ -267,7 +277,7 @@ export default function Page() {
                   <tr>
                     <th>方案</th>
                     <th>逻辑</th>
-                    <th>7个尾数</th>
+                    <th>8个尾数</th>
                     <th>20期</th>
                     <th>30期</th>
                     <th>50期</th>
@@ -351,8 +361,8 @@ export default function Page() {
 
             <div className="card">
               <h2>说明</h2>
-              <p className="subtitle">命中规则：只看特码尾数是否落入方案的 7 个尾数内。</p>
-              <p className="subtitle">覆盖率：7 个尾数覆盖 0-9 共 10 个尾数，所以固定为 70%。</p>
+              <p className="subtitle">命中规则：只看特码尾数是否落入方案的 8 个尾数内。</p>
+              <p className="subtitle">覆盖率：8 个尾数覆盖 0-9 共 10 个尾数，所以固定为 80%。</p>
               <p className="subtitle">本页面仅做历史回测统计，不保证未来结果。</p>
             </div>
           </aside>
