@@ -15,6 +15,91 @@ const TAIL_STRATEGIES = [
   { id: 's10', name: '方案10', logic: '综合最优', tails: [0, 1, 2, 4, 5, 6, 7, 8] },
 ]
 
+const FREEZE_VERSION = 'tail-freeze-v1'
+
+function getFreezeKey(expect) {
+  return `marksix-tail-freeze-${FREEZE_VERSION}-${expect}`
+}
+
+function makeFrozenDrawRecord(draw, ranking) {
+  const specialNumber = Number(draw?.specialNumber || draw?.numbers?.[6])
+  const tail = getTail(specialNumber)
+
+  return {
+    version: FREEZE_VERSION,
+    expect: String(draw?.expect || ''),
+    openTime: draw?.openTime || '',
+    specialNumber,
+    tail,
+    frozenAt: Date.now(),
+    rows: ranking.slice(0, 10).map((strategy, index) => ({
+      rank: index + 1,
+      id: strategy.id,
+      name: strategy.name,
+      logic: strategy.logic,
+      tails: [...strategy.tails],
+      hit: strategy.tails.includes(tail),
+      result20HitCount: strategy.result20?.hitCount || 0,
+      result20TestedCount: strategy.result20?.testedCount || 0,
+      result20HitRate: strategy.result20?.hitRate || 0,
+      result30MaxMiss: strategy.result30?.maxMiss || 0,
+      result30CurrentMiss: strategy.result30?.currentMiss || 0,
+    })),
+  }
+}
+
+function readFrozenDraw(expect) {
+  if (typeof window === 'undefined' || !expect) return null
+
+  try {
+    const raw = window.localStorage.getItem(getFreezeKey(expect))
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (parsed?.version !== FREEZE_VERSION || String(parsed?.expect) !== String(expect)) return null
+    if (!Array.isArray(parsed?.rows)) return null
+    return parsed
+  } catch (error) {
+    return null
+  }
+}
+
+function writeFrozenDraw(draw, ranking) {
+  if (typeof window === 'undefined' || !draw?.expect || !ranking?.length) return null
+
+  const existed = readFrozenDraw(draw.expect)
+  if (existed) return existed
+
+  const record = makeFrozenDrawRecord(draw, ranking)
+
+  try {
+    window.localStorage.setItem(getFreezeKey(draw.expect), JSON.stringify(record))
+  } catch (error) {
+    console.warn('保存尾数开奖冻结记录失败', error)
+  }
+
+  return record
+}
+
+function buildFrozen20Records(history, ranking) {
+  if (!history?.length || !ranking?.length) return []
+  return history.slice(0, 20).map((draw) => readFrozenDraw(draw.expect) || makeFrozenDrawRecord(draw, ranking))
+}
+
+function summarizeFrozenRank(records, rank) {
+  const rows = records
+    .map((record) => record.rows.find((item) => Number(item.rank) === Number(rank)))
+    .filter(Boolean)
+
+  const testedCount = rows.length
+  const hitCount = rows.filter((item) => item.hit).length
+  const missCount = testedCount - hitCount
+  const hitRate = testedCount ? (hitCount / testedCount) * 100 : 0
+  const maxMiss = calcMaxMiss(rows.map((item) => item.hit))
+  const currentMiss = calcCurrentMiss(rows.map((item) => item.hit))
+
+  return { testedCount, hitCount, missCount, hitRate, maxMiss, currentMiss }
+}
+
 
 const WINDOWS = [20, 30, 50]
 
@@ -226,7 +311,15 @@ export default function Page() {
   const heat = useMemo(() => buildTailHeat(history, 50), [history])
   const consensus = useMemo(() => buildConsensusTails(ranking, heat), [ranking, heat])
   const currentDrawRows = useMemo(() => buildCurrentDrawRows(ranking, data?.latest), [ranking, data?.latest])
+  const [frozenRecords, setFrozenRecords] = useState([])
   const nextTails = consensus.tails.length ? consensus.tails : selected?.tails || []
+
+  useEffect(() => {
+    if (!history.length || !ranking.length) return
+
+    history.slice(0, 20).forEach((draw) => writeFrozenDraw(draw, ranking))
+    setFrozenRecords(buildFrozen20Records(history, ranking))
+  }, [history, ranking])
 
   useEffect(() => {
     if (!selectedId && ranking[0]?.id) setSelectedId(ranking[0].id)
@@ -270,6 +363,13 @@ export default function Page() {
         .copy-btn { border: 1px solid rgba(250, 204, 21, .6); border-radius: 12px; padding: 10px 14px; color: #0f172a; background: linear-gradient(145deg, #fde047, #f97316); font-weight: 900; cursor: pointer; white-space: nowrap; }
         .consensus-box { margin-top: 12px; padding: 12px; border-radius: 14px; background: rgba(34, 197, 94, .08); border: 1px solid rgba(34, 197, 94, .25); }
         .small-table th, .small-table td { font-size: 13px; padding: 10px 8px; }
+        .scroll-table { overflow-x: auto; border-radius: 14px; border: 1px solid rgba(148, 163, 184, .16); }
+        .matrix-table { min-width: 1120px; }
+        .matrix-table th, .matrix-table td { text-align: center; white-space: nowrap; border-right: 1px solid rgba(148, 163, 184, .12); }
+        .matrix-table th:first-child, .matrix-table td:first-child { text-align: left; position: sticky; left: 0; background: #0f1b30; z-index: 2; }
+        .matrix-hit { background: rgba(250, 204, 21, .18); color: #fde047; font-weight: 900; }
+        .matrix-miss { background: rgba(15, 23, 42, .78); color: #bfdbfe; font-weight: 900; }
+        .rank-summary { display: block; color: #93c5fd; font-size: 12px; font-weight: 700; margin-top: 4px; }
         .hit-pill { display: inline-flex; padding: 4px 9px; border-radius: 999px; font-weight: 900; background: rgba(34, 197, 94, .16); color: #4ade80; }
         .miss-pill { display: inline-flex; padding: 4px 9px; border-radius: 999px; font-weight: 900; background: rgba(239, 68, 68, .14); color: #fb7185; }
         .muted { color: #91a4bf; font-size: 13px; }
@@ -406,6 +506,49 @@ export default function Page() {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            <div className="card">
+              <h2>近20期开奖冻结统计</h2>
+              <p className="subtitle">每期开奖后会把当时前10个档位的中 / 不中结果保存到浏览器本地缓存。保存后不会再随新开奖或排名变化而改写，比如今天显示未中，以后打开仍显示未中。</p>
+              <div className="scroll-table">
+                <table className="small-table matrix-table">
+                  <thead>
+                    <tr>
+                      <th>日期 / 期数</th>
+                      <th>特码</th>
+                      <th>尾数</th>
+                      {Array.from({ length: 10 }, (_, index) => {
+                        const summary = summarizeFrozenRank(frozenRecords, index + 1)
+                        const first = frozenRecords[0]?.rows?.find((item) => item.rank === index + 1)
+                        return (
+                          <th key={index}>
+                            {index + 1}. {first?.logic || `档位${index + 1}`}
+                            <span className="rank-summary">{summary.hitCount}/{summary.testedCount}｜{fmtPercent(summary.hitRate)}｜连错{summary.currentMiss}</span>
+                          </th>
+                        )
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {frozenRecords.map((record) => (
+                      <tr key={record.expect}>
+                        <td><strong>{record.openTime || '-'}</strong><br /><span className="muted">第 {record.expect} 期</span></td>
+                        <td>{String(record.specialNumber || 0).padStart(2, '0')}</td>
+                        <td>{record.tail}尾</td>
+                        {Array.from({ length: 10 }, (_, index) => {
+                          const row = record.rows.find((item) => item.rank === index + 1)
+                          return (
+                            <td key={index} className={row?.hit ? 'matrix-hit' : 'matrix-miss'}>
+                              {row?.hit ? '中' : '未中'}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             {selected && (
