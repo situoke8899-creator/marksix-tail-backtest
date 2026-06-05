@@ -398,8 +398,21 @@ export default function Page() {
         .heat-item { display: grid; grid-template-columns: 42px 1fr 70px; gap: 10px; align-items: center; margin: 10px 0; }
         .bar { height: 10px; border-radius: 999px; overflow: hidden; background: #1e293b; }
         .bar span { display: block; height: 100%; background: linear-gradient(90deg, #38bdf8, #22c55e); border-radius: 999px; }
+
+        .freeze-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+        .freeze-card { padding: 12px; border-radius: 14px; background: rgba(2, 6, 23, .34); border: 1px solid rgba(148, 163, 184, .16); }
+        .freeze-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+        .freeze-title { font-weight: 900; font-size: 14px; }
+        .freeze-sub { color: #93a4bb; font-size: 12px; margin-top: 4px; }
+        .freeze-rate { text-align: right; color: #4ade80; font-weight: 900; font-size: 13px; white-space: nowrap; }
+        .freeze-dots { display: grid; grid-template-columns: repeat(10, 1fr); gap: 5px; }
+        .freeze-dot { height: 24px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 13px; border: 1px solid rgba(148, 163, 184, .12); }
+        .freeze-dot.hit-dot { background: rgba(34, 197, 94, .22); }
+        .freeze-dot.miss-dot { background: rgba(239, 68, 68, .18); }
+        .freeze-legend { display: flex; gap: 14px; align-items: center; margin: 8px 0 14px; color: #9fb2cc; font-size: 13px; }
+        .freeze-legend span { display: inline-flex; align-items: center; gap: 5px; }
         .error { padding: 16px; border-radius: 14px; background: rgba(239, 68, 68, .14); color: #fecaca; border: 1px solid rgba(248, 113, 113, .3); }
-        @media (max-width: 900px) { .hero, .grid { display: block; } .latest { width: auto; margin-top: 16px; } .stats { grid-template-columns: 1fr; } .page { padding: 16px; } }
+        @media (max-width: 900px) { .hero, .grid { display: block; } .latest { width: auto; margin-top: 16px; } .stats { grid-template-columns: 1fr; } .freeze-grid { grid-template-columns: 1fr; } .page { padding: 16px; } }
       `}</style>
 
       <div className="container">
@@ -509,45 +522,57 @@ export default function Page() {
             </div>
 
             <div className="card">
-              <h2>近20期开奖冻结统计</h2>
-              <p className="subtitle">每期开奖后会把当时前10个档位的中 / 不中结果保存到浏览器本地缓存。保存后不会再随新开奖或排名变化而改写，比如今天显示未中，以后打开仍显示未中。</p>
-              <div className="scroll-table">
-                <table className="small-table matrix-table">
-                  <thead>
-                    <tr>
-                      <th>日期 / 期数</th>
-                      <th>特码</th>
-                      <th>尾数</th>
-                      {Array.from({ length: 10 }, (_, index) => {
-                        const summary = summarizeFrozenRank(frozenRecords, index + 1)
-                        const first = frozenRecords[0]?.rows?.find((item) => item.rank === index + 1)
-                        return (
-                          <th key={index}>
-                            {index + 1}. {first?.logic || `档位${index + 1}`}
-                            <span className="rank-summary">{summary.hitCount}/{summary.testedCount}｜{fmtPercent(summary.hitRate)}｜连错{summary.currentMiss}</span>
-                          </th>
-                        )
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {frozenRecords.map((record) => (
-                      <tr key={record.expect}>
-                        <td><strong>{record.openTime || '-'}</strong><br /><span className="muted">第 {record.expect} 期</span></td>
-                        <td>{String(record.specialNumber || 0).padStart(2, '0')}</td>
-                        <td>{record.tail}尾</td>
-                        {Array.from({ length: 10 }, (_, index) => {
-                          const row = record.rows.find((item) => item.rank === index + 1)
-                          return (
-                            <td key={index} className={row?.hit ? 'matrix-hit' : 'matrix-miss'}>
-                              {row?.hit ? '中' : '未中'}
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <h2>近20期开奖冻结热力图</h2>
+              <p className="subtitle">每期开奖后会把当时前10个档位的中 / 不中结果保存到浏览器本地缓存。保存后不会再随新开奖或排名变化而改写。</p>
+              <div className="freeze-legend">
+                <span>🟩 命中</span>
+                <span>🟥 未中</span>
+                <span>每行从左到右 = 最新一期到第20期</span>
+              </div>
+
+              <div className="freeze-grid">
+                {Array.from({ length: 10 }, (_, index) => {
+                  const rank = index + 1
+                  const summary = summarizeFrozenRank(frozenRecords, rank)
+                  const first = frozenRecords[0]?.rows?.find((item) => item.rank === rank)
+                  const dots = frozenRecords.map((record) => {
+                    const row = record.rows.find((item) => item.rank === rank)
+                    return {
+                      expect: record.expect,
+                      openTime: record.openTime,
+                      tail: record.tail,
+                      specialNumber: record.specialNumber,
+                      hit: Boolean(row?.hit),
+                    }
+                  })
+
+                  return (
+                    <div className="freeze-card" key={rank}>
+                      <div className="freeze-head">
+                        <div>
+                          <div className="freeze-title">{rank}. {first?.logic || `档位${rank}`}</div>
+                          <div className="freeze-sub">{first?.tails?.join(' ') || '-'}</div>
+                        </div>
+                        <div className="freeze-rate">
+                          {summary.hitCount}/{summary.testedCount}｜{fmtPercent(summary.hitRate)}
+                          <div className="freeze-sub">最大连错{summary.maxMiss}｜当前{summary.currentMiss}</div>
+                        </div>
+                      </div>
+
+                      <div className="freeze-dots">
+                        {dots.map((item) => (
+                          <span
+                            key={`${rank}-${item.expect}`}
+                            className={item.hit ? 'freeze-dot hit-dot' : 'freeze-dot miss-dot'}
+                            title={`第${item.expect}期｜特码${String(item.specialNumber || 0).padStart(2, '0')}｜${item.tail}尾｜${item.hit ? '命中' : '未中'}`}
+                          >
+                            {item.hit ? '🟩' : '🟥'}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
 
