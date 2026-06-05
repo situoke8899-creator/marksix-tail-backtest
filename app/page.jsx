@@ -16,92 +16,11 @@ const TAIL_STRATEGIES = [
 ]
 
 const FREEZE_VERSION = 'tail-freeze-v1'
+const WINDOWS = [20, 30, 50]
 
 function getFreezeKey(expect) {
   return `marksix-tail-freeze-${FREEZE_VERSION}-${expect}`
 }
-
-function makeFrozenDrawRecord(draw, ranking) {
-  const specialNumber = Number(draw?.specialNumber || draw?.numbers?.[6])
-  const tail = getTail(specialNumber)
-
-  return {
-    version: FREEZE_VERSION,
-    expect: String(draw?.expect || ''),
-    openTime: draw?.openTime || '',
-    specialNumber,
-    tail,
-    frozenAt: Date.now(),
-    rows: ranking.slice(0, 10).map((strategy, index) => ({
-      rank: index + 1,
-      id: strategy.id,
-      name: strategy.name,
-      logic: strategy.logic,
-      tails: [...strategy.tails],
-      hit: strategy.tails.includes(tail),
-      result20HitCount: strategy.result20?.hitCount || 0,
-      result20TestedCount: strategy.result20?.testedCount || 0,
-      result20HitRate: strategy.result20?.hitRate || 0,
-      result30MaxMiss: strategy.result30?.maxMiss || 0,
-      result30CurrentMiss: strategy.result30?.currentMiss || 0,
-    })),
-  }
-}
-
-function readFrozenDraw(expect) {
-  if (typeof window === 'undefined' || !expect) return null
-
-  try {
-    const raw = window.localStorage.getItem(getFreezeKey(expect))
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    if (parsed?.version !== FREEZE_VERSION || String(parsed?.expect) !== String(expect)) return null
-    if (!Array.isArray(parsed?.rows)) return null
-    return parsed
-  } catch (error) {
-    return null
-  }
-}
-
-function writeFrozenDraw(draw, ranking) {
-  if (typeof window === 'undefined' || !draw?.expect || !ranking?.length) return null
-
-  const existed = readFrozenDraw(draw.expect)
-  if (existed) return existed
-
-  const record = makeFrozenDrawRecord(draw, ranking)
-
-  try {
-    window.localStorage.setItem(getFreezeKey(draw.expect), JSON.stringify(record))
-  } catch (error) {
-    console.warn('保存尾数开奖冻结记录失败', error)
-  }
-
-  return record
-}
-
-function buildFrozen20Records(history, ranking) {
-  if (!history?.length || !ranking?.length) return []
-  return history.slice(0, 20).map((draw) => readFrozenDraw(draw.expect) || makeFrozenDrawRecord(draw, ranking))
-}
-
-function summarizeFrozenRank(records, rank) {
-  const rows = records
-    .map((record) => record.rows.find((item) => Number(item.rank) === Number(rank)))
-    .filter(Boolean)
-
-  const testedCount = rows.length
-  const hitCount = rows.filter((item) => item.hit).length
-  const missCount = testedCount - hitCount
-  const hitRate = testedCount ? (hitCount / testedCount) * 100 : 0
-  const maxMiss = calcMaxMiss(rows.map((item) => item.hit))
-  const currentMiss = calcCurrentMiss(rows.map((item) => item.hit))
-
-  return { testedCount, hitCount, missCount, hitRate, maxMiss, currentMiss }
-}
-
-
-const WINDOWS = [20, 30, 50]
 
 function getTail(num) {
   return Math.abs(Number(num || 0)) % 10
@@ -114,16 +33,13 @@ function fmtPercent(value) {
 function calcMaxMiss(results) {
   let max = 0
   let current = 0
-
   results.forEach((hit) => {
-    if (hit) {
-      current = 0
-    } else {
+    if (hit) current = 0
+    else {
       current += 1
       max = Math.max(max, current)
     }
   })
-
   return max
 }
 
@@ -253,6 +169,94 @@ function buildConsensusTails(ranking, heat) {
   }
 }
 
+function makeConsensusStrategy(tails) {
+  return {
+    id: 'consensus',
+    name: '10档综合',
+    logic: '出现最多尾数',
+    tails: [...tails],
+  }
+}
+
+function makeFrozenDrawRecord(draw, ranking) {
+  const specialNumber = Number(draw?.specialNumber || draw?.numbers?.[6])
+  const tail = getTail(specialNumber)
+
+  return {
+    version: FREEZE_VERSION,
+    expect: String(draw?.expect || ''),
+    openTime: draw?.openTime || '',
+    specialNumber,
+    tail,
+    frozenAt: Date.now(),
+    rows: ranking.slice(0, 10).map((strategy, index) => ({
+      rank: index + 1,
+      id: strategy.id,
+      name: strategy.name,
+      logic: strategy.logic,
+      tails: [...strategy.tails],
+      hit: strategy.tails.includes(tail),
+      result20HitCount: strategy.result20?.hitCount || 0,
+      result20TestedCount: strategy.result20?.testedCount || 0,
+      result20HitRate: strategy.result20?.hitRate || 0,
+      result30MaxMiss: strategy.result30?.maxMiss || 0,
+      result30CurrentMiss: strategy.result30?.currentMiss || 0,
+    })),
+  }
+}
+
+function readFrozenDraw(expect) {
+  if (typeof window === 'undefined' || !expect) return null
+
+  try {
+    const raw = window.localStorage.getItem(getFreezeKey(expect))
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (parsed?.version !== FREEZE_VERSION || String(parsed?.expect) !== String(expect)) return null
+    if (!Array.isArray(parsed?.rows)) return null
+    return parsed
+  } catch (error) {
+    return null
+  }
+}
+
+function writeFrozenDraw(draw, ranking) {
+  if (typeof window === 'undefined' || !draw?.expect || !ranking?.length) return null
+
+  const existed = readFrozenDraw(draw.expect)
+  if (existed) return existed
+
+  const record = makeFrozenDrawRecord(draw, ranking)
+
+  try {
+    window.localStorage.setItem(getFreezeKey(draw.expect), JSON.stringify(record))
+  } catch (error) {
+    console.warn('保存尾数开奖冻结记录失败', error)
+  }
+
+  return record
+}
+
+function buildFrozen20Records(history, ranking) {
+  if (!history?.length || !ranking?.length) return []
+  return history.slice(0, 20).map((draw) => readFrozenDraw(draw.expect) || makeFrozenDrawRecord(draw, ranking))
+}
+
+function summarizeFrozenRank(records, rank) {
+  const rows = records
+    .map((record) => record.rows.find((item) => Number(item.rank) === Number(rank)))
+    .filter(Boolean)
+
+  const testedCount = rows.length
+  const hitCount = rows.filter((item) => item.hit).length
+  const missCount = testedCount - hitCount
+  const hitRate = testedCount ? (hitCount / testedCount) * 100 : 0
+  const maxMiss = calcMaxMiss(rows.map((item) => item.hit))
+  const currentMiss = calcCurrentMiss(rows.map((item) => item.hit))
+
+  return { testedCount, hitCount, missCount, hitRate, maxMiss, currentMiss }
+}
+
 function buildCurrentDrawRows(ranking, latest) {
   const specialNumber = Number(latest?.specialNumber || latest?.numbers?.[6])
   const currentTail = getTail(specialNumber)
@@ -266,8 +270,8 @@ function buildCurrentDrawRows(ranking, latest) {
   }))
 }
 
-function buildCopyText(nextExpect, tails) {
-  return `第${nextExpect || '-'}期尾数参考：${tails.join(' ')}`
+function buildCopyText(expect, tails, label = '尾数参考') {
+  return `第${expect || '-'}期${label}：${tails.join(' ')}`
 }
 
 function TailBadge({ tail, active = false }) {
@@ -284,6 +288,7 @@ export default function Page() {
   const [error, setError] = useState('')
   const [selectedId, setSelectedId] = useState('')
   const [copied, setCopied] = useState(false)
+  const [selectedCopied, setSelectedCopied] = useState(false)
 
   async function loadData() {
     setLoading(true)
@@ -310,6 +315,12 @@ export default function Page() {
   const selected = ranking.find((item) => item.id === selectedId) || ranking[0]
   const heat = useMemo(() => buildTailHeat(history, 50), [history])
   const consensus = useMemo(() => buildConsensusTails(ranking, heat), [ranking, heat])
+  const consensusStrategy = useMemo(() => makeConsensusStrategy(consensus.tails), [consensus.tails])
+  const consensusStats = useMemo(() => ({
+    result20: buildTailStats(history, consensusStrategy, 20),
+    result30: buildTailStats(history, consensusStrategy, 30),
+    result50: buildTailStats(history, consensusStrategy, 50),
+  }), [history, consensusStrategy])
   const currentDrawRows = useMemo(() => buildCurrentDrawRows(ranking, data?.latest), [ranking, data?.latest])
   const [frozenRecords, setFrozenRecords] = useState([])
   const nextTails = consensus.tails.length ? consensus.tails : selected?.tails || []
@@ -337,6 +348,19 @@ export default function Page() {
     }
   }
 
+  async function copySelectedTails() {
+    if (!selected) return
+    const text = buildCopyText(data?.nextExpect, selected.tails, `${selected.name}${selected.logic}`)
+    try {
+      await navigator.clipboard.writeText(text)
+      setSelectedCopied(true)
+      window.setTimeout(() => setSelectedCopied(false), 1500)
+    } catch (error) {
+      setSelectedCopied(false)
+      alert(text)
+    }
+  }
+
   return (
     <main className="page">
       <style jsx global>{`
@@ -351,6 +375,10 @@ export default function Page() {
         .subtitle { color: #a8bdd8; margin: 0; line-height: 1.7; }
         .latest { width: 390px; padding: 22px; }
         .latest-title { color: #9fb2cc; font-size: 14px; margin-bottom: 10px; }
+        .selected-box { margin-top: 28px; padding: 18px; border-radius: 16px; border: 1px solid rgba(56, 189, 248, .28); background: rgba(2, 6, 23, .22); }
+        .selected-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+        .selected-name { font-size: 20px; font-weight: 900; }
+        .selected-desc { color: #a8bdd8; font-size: 13px; margin-top: 6px; }
         .next-box { margin-top: 18px; padding-top: 18px; border-top: 1px solid rgba(148, 163, 184, .18); }
         .expect { font-size: 24px; font-weight: 800; margin-bottom: 12px; }
         .balls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -362,16 +390,6 @@ export default function Page() {
         .copy-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
         .copy-btn { border: 1px solid rgba(250, 204, 21, .6); border-radius: 12px; padding: 10px 14px; color: #0f172a; background: linear-gradient(145deg, #fde047, #f97316); font-weight: 900; cursor: pointer; white-space: nowrap; }
         .consensus-box { margin-top: 12px; padding: 12px; border-radius: 14px; background: rgba(34, 197, 94, .08); border: 1px solid rgba(34, 197, 94, .25); }
-        .small-table th, .small-table td { font-size: 13px; padding: 10px 8px; }
-        .scroll-table { overflow-x: auto; border-radius: 14px; border: 1px solid rgba(148, 163, 184, .16); }
-        .matrix-table { min-width: 1120px; }
-        .matrix-table th, .matrix-table td { text-align: center; white-space: nowrap; border-right: 1px solid rgba(148, 163, 184, .12); }
-        .matrix-table th:first-child, .matrix-table td:first-child { text-align: left; position: sticky; left: 0; background: #0f1b30; z-index: 2; }
-        .matrix-hit { background: rgba(250, 204, 21, .18); color: #fde047; font-weight: 900; }
-        .matrix-miss { background: rgba(15, 23, 42, .78); color: #bfdbfe; font-weight: 900; }
-        .rank-summary { display: block; color: #93c5fd; font-size: 12px; font-weight: 700; margin-top: 4px; }
-        .hit-pill { display: inline-flex; padding: 4px 9px; border-radius: 999px; font-weight: 900; background: rgba(34, 197, 94, .16); color: #4ade80; }
-        .miss-pill { display: inline-flex; padding: 4px 9px; border-radius: 999px; font-weight: 900; background: rgba(239, 68, 68, .14); color: #fb7185; }
         .muted { color: #91a4bf; font-size: 13px; }
         .grid { display: grid; grid-template-columns: 1.5fr .9fr; gap: 18px; align-items: start; }
         .card { padding: 20px; margin-bottom: 18px; overflow: hidden; }
@@ -395,24 +413,26 @@ export default function Page() {
         .detail-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; padding: 10px; border-radius: 12px; background: rgba(15, 23, 42, .7); }
         .hit { color: #4ade80; font-weight: 900; margin-left: auto; }
         .miss { color: #fb7185; font-weight: 900; margin-left: auto; }
+        .hit-pill { display: inline-flex; padding: 4px 9px; border-radius: 999px; font-weight: 900; background: rgba(34, 197, 94, .16); color: #4ade80; }
+        .miss-pill { display: inline-flex; padding: 4px 9px; border-radius: 999px; font-weight: 900; background: rgba(239, 68, 68, .14); color: #fb7185; }
         .heat-item { display: grid; grid-template-columns: 42px 1fr 70px; gap: 10px; align-items: center; margin: 10px 0; }
         .bar { height: 10px; border-radius: 999px; overflow: hidden; background: #1e293b; }
         .bar span { display: block; height: 100%; background: linear-gradient(90deg, #38bdf8, #22c55e); border-radius: 999px; }
-
-        .freeze-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-        .freeze-card { padding: 12px; border-radius: 14px; background: rgba(2, 6, 23, .34); border: 1px solid rgba(148, 163, 184, .16); }
-        .freeze-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
-        .freeze-title { font-weight: 900; font-size: 14px; }
-        .freeze-sub { color: #93a4bb; font-size: 12px; margin-top: 4px; }
-        .freeze-rate { text-align: right; color: #4ade80; font-weight: 900; font-size: 13px; white-space: nowrap; }
-        .freeze-dots { display: grid; grid-template-columns: repeat(10, 1fr); gap: 5px; }
-        .freeze-dot { height: 24px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 13px; border: 1px solid rgba(148, 163, 184, .12); }
-        .freeze-dot.hit-dot { background: rgba(34, 197, 94, .22); }
-        .freeze-dot.miss-dot { background: rgba(239, 68, 68, .18); }
-        .freeze-legend { display: flex; gap: 14px; align-items: center; margin: 8px 0 14px; color: #9fb2cc; font-size: 13px; }
-        .freeze-legend span { display: inline-flex; align-items: center; gap: 5px; }
         .error { padding: 16px; border-radius: 14px; background: rgba(239, 68, 68, .14); color: #fecaca; border: 1px solid rgba(248, 113, 113, .3); }
-        @media (max-width: 900px) { .hero, .grid { display: block; } .latest { width: auto; margin-top: 16px; } .stats { grid-template-columns: 1fr; } .freeze-grid { grid-template-columns: 1fr; } .page { padding: 16px; } }
+        .heatmap-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+        .heatmap-card { padding: 14px; border-radius: 14px; background: rgba(2, 6, 23, .36); border: 1px solid rgba(148, 163, 184, .16); }
+        .heatmap-title { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 10px; font-weight: 900; }
+        .heatmap-sub { color: #91a4bf; font-size: 12px; font-weight: 700; }
+        .heatmap-dots { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; }
+        .dot { display: inline-flex; height: 24px; min-width: 24px; border-radius: 7px; align-items: center; justify-content: center; font-size: 13px; background: #ef4444; box-shadow: inset 0 -2px 0 rgba(0,0,0,.22); }
+        .dot.hit-dot { background: #22c55e; }
+        .dot.miss-dot { background: #ef4444; }
+        @media (max-width: 900px) {
+          .hero, .grid { display: block; }
+          .latest { width: auto; margin-top: 16px; }
+          .stats, .heatmap-grid { grid-template-columns: 1fr; }
+          .page { padding: 16px; }
+        }
       `}</style>
 
       <div className="container">
@@ -420,6 +440,23 @@ export default function Page() {
           <div className="hero-card">
             <h1>澳门六合彩尾数策略回测系统</h1>
             <p className="subtitle">增加下一期尾数参考，不预测具体开奖号码。系统自动读取历史开奖，分别测试近 20 / 30 / 50 期的命中率、最大连错、当前连错和覆盖率，筛出当前综合排名最高的 8 尾方案。</p>
+
+            {selected && (
+              <div className="selected-box">
+                <div className="selected-head">
+                  <div>
+                    <div className="latest-title">当前点击方案尾数</div>
+                    <div className="selected-name">{selected.name}｜{selected.logic}</div>
+                  </div>
+                  <button className="copy-btn" onClick={copySelectedTails}>{selectedCopied ? '已复制' : '复制方案尾数'}</button>
+                </div>
+                <div className="tail-list">{selected.tails.map((tail) => <TailBadge key={tail} tail={tail} active />)}</div>
+                <div className="selected-desc">
+                  近20期 {fmtPercent(selected.result20.hitRate)} ｜ 近30期 {fmtPercent(selected.result30.hitRate)} ｜ 近50期 {fmtPercent(selected.result50.hitRate)}
+                  ｜ 最大连错 {selected.result50.maxMiss} ｜ 当前连错 {selected.result20.currentMiss}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="hero-card latest">
@@ -445,7 +482,7 @@ export default function Page() {
                 </div>
                 <div className="consensus-box">
                   <p className="muted" style={{ margin: 0 }}>当前采用：10档位综合出现最多尾数｜按方案排名权重 + 出现次数筛选</p>
-                  <p className="muted" style={{ margin: '6px 0 0' }}>备选第一档：{selected.name}｜{selected.logic}</p>
+                  <p className="muted" style={{ margin: '6px 0 0' }}>综合胜算：20期 {fmtPercent(consensusStats.result20.hitRate)} ｜ 30期 {fmtPercent(consensusStats.result30.hitRate)} ｜ 50期 {fmtPercent(consensusStats.result50.hitRate)}</p>
                 </div>
               </div>
             )}
@@ -492,17 +529,34 @@ export default function Page() {
             </div>
 
             <div className="card">
+              <h2>10档综合出现最多尾数胜算</h2>
+              <p className="subtitle">把当前排行榜前10个档位的尾数合并统计，选出现次数最多的8个尾数，再回测近20 / 30 / 50期开奖命中率。</p>
+              <div className="tail-list" style={{ margin: '14px 0' }}>{nextTails.map((tail) => <TailBadge key={tail} tail={tail} active />)}</div>
+              <div className="stats">
+                {[20, 30, 50].map((size) => {
+                  const result = consensusStats[`result${size}`]
+                  return (
+                    <div className="stat" key={size}>
+                      <div className="stat-label">综合近 {size} 期胜算</div>
+                      <div className="stat-value">{fmtPercent(result.hitRate)}</div>
+                      <div className="muted">命中 {result.hitCount}/{result.testedCount} ｜ 最大连错 {result.maxMiss} ｜ 当前连错 {result.currentMiss}</div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="card">
               <h2>10个档位当期开奖统计</h2>
-              <table className="small-table">
+              <table>
                 <thead>
                   <tr>
                     <th>排名</th>
                     <th>档位策略</th>
-                    <th>当期特码</th>
+                    <th>当期开奖</th>
                     <th>是否命中</th>
                     <th>20期命中</th>
                     <th>50期命中</th>
-                    <th>30期连错</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -514,7 +568,6 @@ export default function Page() {
                       <td><span className={row.hit ? 'hit-pill' : 'miss-pill'}>{row.hit ? '命中' : '未中'}</span></td>
                       <td>{row.strategy.result20.hitCount}/{row.strategy.result20.testedCount} = {fmtPercent(row.strategy.result20.hitRate)}</td>
                       <td>{row.strategy.result50.hitCount}/{row.strategy.result50.testedCount} = {fmtPercent(row.strategy.result50.hitRate)}</td>
-                      <td>最大{row.strategy.result30.maxMiss}｜当前{row.strategy.result30.currentMiss}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -523,52 +576,32 @@ export default function Page() {
 
             <div className="card">
               <h2>近20期开奖冻结热力图</h2>
-              <p className="subtitle">每期开奖后会把当时前10个档位的中 / 不中结果保存到浏览器本地缓存。保存后不会再随新开奖或排名变化而改写。</p>
-              <div className="freeze-legend">
-                <span>🟩 命中</span>
-                <span>🟥 未中</span>
-                <span>每行从左到右 = 最新一期到第20期</span>
-              </div>
-
-              <div className="freeze-grid">
+              <p className="subtitle">🟩 = 命中，🟥 = 未中。每期开奖后会把当时前10个档位的结果保存到浏览器本地缓存，保存后不会再随新开奖或排名变化而改写。</p>
+              <div className="heatmap-grid">
                 {Array.from({ length: 10 }, (_, index) => {
                   const rank = index + 1
                   const summary = summarizeFrozenRank(frozenRecords, rank)
                   const first = frozenRecords[0]?.rows?.find((item) => item.rank === rank)
-                  const dots = frozenRecords.map((record) => {
-                    const row = record.rows.find((item) => item.rank === rank)
-                    return {
-                      expect: record.expect,
-                      openTime: record.openTime,
-                      tail: record.tail,
-                      specialNumber: record.specialNumber,
-                      hit: Boolean(row?.hit),
-                    }
-                  })
 
                   return (
-                    <div className="freeze-card" key={rank}>
-                      <div className="freeze-head">
-                        <div>
-                          <div className="freeze-title">{rank}. {first?.logic || `档位${rank}`}</div>
-                          <div className="freeze-sub">{first?.tails?.join(' ') || '-'}</div>
-                        </div>
-                        <div className="freeze-rate">
-                          {summary.hitCount}/{summary.testedCount}｜{fmtPercent(summary.hitRate)}
-                          <div className="freeze-sub">最大连错{summary.maxMiss}｜当前{summary.currentMiss}</div>
-                        </div>
+                    <div className="heatmap-card" key={rank}>
+                      <div className="heatmap-title">
+                        <span>{rank}. {first?.logic || `档位${rank}`}</span>
+                        <span className="heatmap-sub">{summary.hitCount}/{summary.testedCount}｜{fmtPercent(summary.hitRate)}｜连错{summary.currentMiss}</span>
                       </div>
-
-                      <div className="freeze-dots">
-                        {dots.map((item) => (
-                          <span
-                            key={`${rank}-${item.expect}`}
-                            className={item.hit ? 'freeze-dot hit-dot' : 'freeze-dot miss-dot'}
-                            title={`第${item.expect}期｜特码${String(item.specialNumber || 0).padStart(2, '0')}｜${item.tail}尾｜${item.hit ? '命中' : '未中'}`}
-                          >
-                            {item.hit ? '🟩' : '🟥'}
-                          </span>
-                        ))}
+                      <div className="heatmap-dots">
+                        {frozenRecords.map((record) => {
+                          const row = record.rows.find((item) => item.rank === rank)
+                          return (
+                            <span
+                              key={`${record.expect}-${rank}`}
+                              className={row?.hit ? 'dot hit-dot' : 'dot miss-dot'}
+                              title={`第${record.expect}期｜尾${record.tail}｜${row?.hit ? '命中' : '未中'}`}
+                            >
+                              {row?.hit ? '🟩' : '🟥'}
+                            </span>
+                          )
+                        })}
                       </div>
                     </div>
                   )
