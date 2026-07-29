@@ -1194,6 +1194,104 @@ function comboFrozenStats(rows,size){
 }
 
 
+
+function evaluateComboCandidate(
+  frozenRecords,
+  zodiacStrategy,
+  tailStrategy,
+  headStrategy
+){
+  const rows = buildComboFrozenRows(
+    frozenRecords,
+    zodiacStrategy?.id,
+    tailStrategy?.id,
+    headStrategy?.id
+  )
+
+  const s20 = comboFrozenStats(rows,20)
+  const s30 = comboFrozenStats(rows,30)
+  const s50 = comboFrozenStats(rows,50)
+  const s100 = comboFrozenStats(rows,100)
+
+  const score =
+    s20.hitRate * 0.40 +
+    s30.hitRate * 0.25 +
+    s50.hitRate * 0.20 +
+    s100.hitRate * 0.15 -
+    s20.maxMiss * 1.2 -
+    s20.currentMiss * 0.6
+
+  return {
+    rows,
+    s20,
+    s30,
+    s50,
+    s100,
+    score:Number(score.toFixed(3)),
+  }
+}
+
+function findBestCombo(
+  frozenRecords,
+  zodiacRanking,
+  tailRanking,
+  headRanking
+){
+  if(
+    !frozenRecords?.length ||
+    !zodiacRanking?.length ||
+    !tailRanking?.length ||
+    !headRanking?.length
+  ){
+    return null
+  }
+
+  let best = null
+
+  zodiacRanking.slice(0,10).forEach((z,zIndex)=>{
+    tailRanking.slice(0,10).forEach((t,tIndex)=>{
+      headRanking.slice(0,10).forEach((h,hIndex)=>{
+        const result = evaluateComboCandidate(
+          frozenRecords,
+          z,
+          t,
+          h
+        )
+
+        if(result.s20.testedCount < 20) return
+
+        const candidate = {
+          zodiacRank:zIndex+1,
+          tailRank:tIndex+1,
+          headRank:hIndex+1,
+          zodiacStrategy:z,
+          tailStrategy:t,
+          headStrategy:h,
+          ...result,
+        }
+
+        if(
+          !best ||
+          candidate.score > best.score ||
+          (
+            candidate.score === best.score &&
+            candidate.s20.hitRate > best.s20.hitRate
+          ) ||
+          (
+            candidate.score === best.score &&
+            candidate.s20.hitRate === best.s20.hitRate &&
+            candidate.s100.hitRate > best.s100.hitRate
+          )
+        ){
+          best = candidate
+        }
+      })
+    })
+  })
+
+  return best
+}
+
 function Z({z}){ return <span className="z">{z}</span> }
 function Ball({n,z,special=false}){ return <div className="bw"><span className={special?'ball sp':'ball'}>{String(n).padStart(2,'0')}</span><small>{z||'-'}</small></div> }
 
@@ -1210,6 +1308,7 @@ export default function Page(){
   const [filterHeadRank,setFilterHeadRank]=useState(1)
   const [filterResult,setFilterResult]=useState(null)
   const [filterCopied,setFilterCopied]=useState(false)
+  const [bestComboInfo,setBestComboInfo]=useState(null)
 
   async function load(){
     setLoading(true);setError('')
@@ -1298,7 +1397,60 @@ export default function Page(){
     try{await navigator.clipboard.writeText(txt);setTailCopied(true);setTimeout(()=>setTailCopied(false),1200)}catch{alert(txt)}
   }
 
+  function applyBestCombo(){
+    const best = findBestCombo(
+      frozenRecords,
+      ranking,
+      tRanking,
+      hRanking
+    )
+
+    if(!best){
+      alert('冻结历史不足，暂时无法计算最优组合。')
+      return
+    }
+
+    setFilterZodiacRank(best.zodiacRank)
+    setFilterTailRank(best.tailRank)
+    setFilterHeadRank(best.headRank)
+    setBestComboInfo(best)
+
+    const rows = buildComboFilterResult(
+      best.zodiacStrategy,
+      best.tailStrategy,
+      best.headStrategy,
+      numberZodiacMap
+    )
+
+    setFilterResult({
+      zodiacRank:best.zodiacRank,
+      tailRank:best.tailRank,
+      headRank:best.headRank,
+      zodiacId:best.zodiacStrategy?.id,
+      tailId:best.tailStrategy?.id,
+      headId:best.headStrategy?.id,
+      zodiacStrategy:best.zodiacStrategy,
+      tailStrategy:best.tailStrategy,
+      headStrategy:best.headStrategy,
+      rows,
+      createdAt:Date.now(),
+      autoBest:true,
+      autoBestScore:best.score,
+    })
+
+    window.setTimeout(()=>{
+      document
+        .getElementById('combo-filter-result')
+        ?.scrollIntoView({
+          behavior:'smooth',
+          block:'start',
+        })
+    },50)
+  }
+
   function runComboFilter(){
+    setBestComboInfo(null)
+
     const zodiacStrategy = ranking[filterZodiacRank - 1]
     const tailStrategy = tRanking[filterTailRank - 1]
     const headStrategy = hRanking[filterHeadRank - 1]
@@ -1368,7 +1520,9 @@ export default function Page(){
       .combo-controls{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;align-items:end}
       .combo-control label{display:block;color:#9db1ca;font-size:12px;margin-bottom:5px}
       .combo-select{width:100%;height:40px;border-radius:10px;border:1px solid #3a4c68;background:#071426;color:#e6eef8;padding:0 10px;font-weight:800}
-      .filter-btn{height:40px;background:linear-gradient(145deg,#a78bfa,#7c3aed);color:white}
+      .filter-btn{height:40px;background:linear-gradient(145deg,#a78bfa,#7c3aed);color:white}.best-combo-btn{height:42px;padding:0 18px;border-radius:11px;background:linear-gradient(145deg,#22c55e,#16a34a);color:#052e16;border:1px solid #86efac;font-weight:900;box-shadow:0 0 0 3px rgba(34,197,94,.12)}
+      .best-combo-box{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-bottom:10px}
+      .best-combo-info{color:#86efac;font-size:12px;font-weight:700}
       .combo-summary{margin-top:10px;color:#c4b5fd;font-size:12px;line-height:1.6}
       .filter-result-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;margin-top:14px}
       .filter-number{padding:10px 6px;text-align:center;border-radius:11px;background:#091629;border:1px solid #2d415f}
@@ -1402,6 +1556,26 @@ export default function Page(){
           <h1>新澳门六合彩｜9生肖优化预测系统</h1>
           <p className="sub">10套独立公式全部采用逐期滚动回测。重点修复繁体生肖「馬/龍/雞/豬」与简体「马/龙/鸡/猪」不一致造成的假性未中。</p>
           <div className="combo-filter">
+            <div className="best-combo-box">
+              {bestComboInfo&&(
+                <span className="best-combo-info">
+                  已自动选择：九肖第{bestComboInfo.zodiacRank}名
+                  {' + '}尾数第{bestComboInfo.tailRank}名
+                  {' + '}头数第{bestComboInfo.headRank}名
+                  {' ｜ '}综合评分 {bestComboInfo.score.toFixed(2)}
+                </span>
+              )}
+
+              <button
+                className="best-combo-btn"
+                onClick={applyBestCombo}
+                disabled={!frozenRecords.length}
+                title="自动比较九肖10档 × 尾数10档 × 头数10档，共1000种组合"
+              >
+                ★ 自动选择最优组合
+              </button>
+            </div>
+
             <div className="combo-filter-title">组合号码筛选</div>
 
             <div className="combo-controls">
@@ -1462,6 +1636,8 @@ export default function Page(){
             <div className="combo-summary">
               例：选择“九肖第1名 + 尾数第3名 + 头数第4名”，
               系统只保留同时满足这3个方案的号码，并自动跳到筛选结果。
+              绿色“自动选择最优组合”会比较九肖10档 × 尾数10档 × 头数10档，共1000种组合，
+              按冻结20/30/50/100期命中率与连错综合评分选出当前最优组合。
             </div>
           </div>
 
@@ -1516,6 +1692,11 @@ export default function Page(){
             <div>
               <h2 style={{marginBottom:7}}>组合筛选结果</h2>
               <div className="muted">
+                {filterResult.autoBest&&(
+                  <strong style={{color:'#4ade80'}}>
+                    ★ 自动最优组合｜
+                  </strong>
+                )}
                 九肖第 {filterResult.zodiacRank} 名
                 {' + '}
                 尾数第 {filterResult.tailRank} 名
