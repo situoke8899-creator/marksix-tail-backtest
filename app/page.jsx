@@ -1059,6 +1059,82 @@ function getFrozenStats(
 }
 
 
+
+function buildNumberZodiacMap(history){
+  const map = new Map()
+
+  for(const draw of history || []){
+    const nums = Array.isArray(draw?.numbers) ? draw.numbers : []
+    const zodiacs = Array.isArray(draw?.zodiac) ? draw.zodiac : []
+
+    nums.forEach((num,index)=>{
+      const n = Number(num)
+      const z = zodiacs[index]
+
+      if(
+        Number.isInteger(n) &&
+        n >= 1 &&
+        n <= 49 &&
+        z
+      ){
+        map.set(n,z)
+      }
+    })
+  }
+
+  return map
+}
+
+function buildComboFilterResult(
+  zodiacStrategy,
+  tailStrategy,
+  headStrategy,
+  numberZodiacMap
+){
+  if(
+    !zodiacStrategy ||
+    !tailStrategy ||
+    !headStrategy
+  ){
+    return []
+  }
+
+  const zodiacSet = new Set(
+    zodiacStrategy.picks || []
+  )
+  const tailSet = new Set(
+    tailStrategy.picks || []
+  )
+  const headSet = new Set(
+    headStrategy.picks || []
+  )
+
+  const rows = []
+
+  for(let number=1; number<=49; number+=1){
+    const zodiac = numberZodiacMap.get(number) || ''
+    const tail = getTail(number)
+    const head = getHead(number)
+
+    if(
+      zodiac &&
+      zodiacSet.has(zodiac) &&
+      tailSet.has(tail) &&
+      headSet.has(head)
+    ){
+      rows.push({
+        number,
+        zodiac,
+        tail,
+        head,
+      })
+    }
+  }
+
+  return rows
+}
+
+
 function Z({z}){ return <span className="z">{z}</span> }
 function Ball({n,z,special=false}){ return <div className="bw"><span className={special?'ball sp':'ball'}>{String(n).padStart(2,'0')}</span><small>{z||'-'}</small></div> }
 
@@ -1070,6 +1146,11 @@ export default function Page(){
   const [headCopied,setHeadCopied]=useState(false)
   const [tailCopied,setTailCopied]=useState(false)
   const [frozenRecords,setFrozenRecords]=useState([])
+  const [filterZodiacRank,setFilterZodiacRank]=useState(1)
+  const [filterTailRank,setFilterTailRank]=useState(1)
+  const [filterHeadRank,setFilterHeadRank]=useState(1)
+  const [filterResult,setFilterResult]=useState(null)
+  const [filterCopied,setFilterCopied]=useState(false)
 
   async function load(){
     setLoading(true);setError('')
@@ -1104,6 +1185,10 @@ export default function Page(){
   const hCon=useMemo(()=>headConsensus(hRanking),[hRanking])
   const tRanking=useMemo(()=>buildTailRanking(analysisHistory),[analysisHistory])
   const tCon=useMemo(()=>tailConsensus(tRanking),[tRanking])
+  const numberZodiacMap=useMemo(
+    ()=>buildNumberZodiacMap(analysisHistory),
+    [analysisHistory]
+  )
   const latest=data?.latest
 
   async function copy(){
@@ -1121,6 +1206,59 @@ export default function Page(){
     try{await navigator.clipboard.writeText(txt);setTailCopied(true);setTimeout(()=>setTailCopied(false),1200)}catch{alert(txt)}
   }
 
+  function runComboFilter(){
+    const zodiacStrategy = ranking[filterZodiacRank - 1]
+    const tailStrategy = tRanking[filterTailRank - 1]
+    const headStrategy = hRanking[filterHeadRank - 1]
+
+    const rows = buildComboFilterResult(
+      zodiacStrategy,
+      tailStrategy,
+      headStrategy,
+      numberZodiacMap
+    )
+
+    setFilterResult({
+      zodiacRank: filterZodiacRank,
+      tailRank: filterTailRank,
+      headRank: filterHeadRank,
+      zodiacStrategy,
+      tailStrategy,
+      headStrategy,
+      rows,
+      createdAt: Date.now(),
+    })
+
+    window.setTimeout(()=>{
+      document
+        .getElementById('combo-filter-result')
+        ?.scrollIntoView({
+          behavior:'smooth',
+          block:'start',
+        })
+    },50)
+  }
+
+  async function copyFilterNumbers(){
+    if(!filterResult?.rows?.length) return
+
+    const text = [
+      `第${data?.nextExpect||'-'}期组合筛选`,
+      `九肖第${filterResult.zodiacRank}名`,
+      `尾数第${filterResult.tailRank}名`,
+      `头数第${filterResult.headRank}名`,
+      `号码：${filterResult.rows.map(x=>String(x.number).padStart(2,'0')).join(' ')}`,
+    ].join('｜')
+
+    try{
+      await navigator.clipboard.writeText(text)
+      setFilterCopied(true)
+      setTimeout(()=>setFilterCopied(false),1200)
+    }catch{
+      alert(text)
+    }
+  }
+
   return <main className="page">
     <style jsx global>{`
       *{box-sizing:border-box}body{margin:0;background:#07111f;color:#e6eef8;font-family:Arial,'Microsoft YaHei',sans-serif}
@@ -1128,6 +1266,18 @@ export default function Page(){
       .wrap{max-width:1450px;margin:auto}.card{background:#0e1c31;border:1px solid #263a55;border-radius:16px;padding:18px;margin-bottom:18px}
       h1,h2{margin:0 0 10px}.muted,.sub{color:#9db1ca}.hero{display:grid;grid-template-columns:1.25fr .75fr;gap:16px}
       .cons{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-top:16px;padding:14px;border-radius:13px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25)}
+      .combo-filter{margin-top:14px;padding:14px;border-radius:14px;background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.34)}
+      .combo-filter-title{font-size:16px;font-weight:900;margin-bottom:10px}
+      .combo-controls{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;align-items:end}
+      .combo-control label{display:block;color:#9db1ca;font-size:12px;margin-bottom:5px}
+      .combo-select{width:100%;height:40px;border-radius:10px;border:1px solid #3a4c68;background:#071426;color:#e6eef8;padding:0 10px;font-weight:800}
+      .filter-btn{height:40px;background:linear-gradient(145deg,#a78bfa,#7c3aed);color:white}
+      .combo-summary{margin-top:10px;color:#c4b5fd;font-size:12px;line-height:1.6}
+      .filter-result-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;margin-top:14px}
+      .filter-number{padding:10px 6px;text-align:center;border-radius:11px;background:#091629;border:1px solid #2d415f}
+      .filter-number strong{display:block;font-size:22px;color:#fde047}
+      .filter-number span{display:block;margin-top:4px;color:#9db1ca;font-size:12px}
+
       .zlist,.hlist,.tlist{display:flex;flex-wrap:wrap;gap:6px}.z{display:inline-flex;min-width:34px;height:31px;padding:0 8px;align-items:center;justify-content:center;border-radius:9px;background:#22c55e;color:#052e16;border:1px solid #86efac;font-weight:900}.h{display:inline-flex;min-width:48px;height:31px;padding:0 8px;align-items:center;justify-content:center;border-radius:9px;background:#38bdf8;color:#082f49;border:1px solid #7dd3fc;font-weight:900}.t{display:inline-flex;min-width:46px;height:31px;padding:0 8px;align-items:center;justify-content:center;border-radius:9px;background:#a78bfa;color:#2e1065;border:1px solid #c4b5fd;font-weight:900}
       button{border:0;border-radius:10px;background:#38bdf8;color:#062238;font-weight:900;padding:10px 14px;cursor:pointer}.copy{background:linear-gradient(145deg,#fde047,#f97316)}
       .balls{display:flex;gap:7px;flex-wrap:wrap;align-items:flex-start}.bw{text-align:center}.ball{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#e2e8f0;color:#0f172a;font-weight:900}.sp{background:linear-gradient(145deg,#fde047,#f97316)}.bw small{display:block;margin-top:4px}
@@ -1135,7 +1285,7 @@ export default function Page(){
       .scroll{overflow:auto}table{width:100%;border-collapse:collapse;min-width:1180px}th,td{padding:10px;border-bottom:1px solid #26364d;text-align:left;font-size:13px}th{background:#08172a;color:#9db1ca}
       .rank{font-size:18px;font-weight:900}.rate{font-size:18px;font-weight:900}.good{color:#4ade80}.mid{color:#fde047}.low{color:#fb7185}.formula{color:#93c5fd}.dots{display:grid;grid-template-columns:repeat(10,18px);gap:3px;min-width:210px}.dot{width:18px;height:18px;border-radius:5px;background:#ef4444}.hit{background:#22c55e}
       .note{padding:14px;border-radius:12px;background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.25);line-height:1.7}.history{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.draw{padding:10px;border-radius:10px;background:#091629}.draw strong{display:block}
-      @media(max-width:900px){.page{padding:10px}.hero,.history{display:block}.card{padding:13px}.cons{display:block}.cons button{margin-top:12px}.draw{margin-bottom:8px}}
+      @media(max-width:900px){.page{padding:10px}.hero,.history{display:block}.card{padding:13px}.cons{display:block}.cons button{margin-top:12px}.draw{margin-bottom:8px}.combo-controls{grid-template-columns:1fr 1fr}.filter-result-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
     `}</style>
 
     <div className="wrap">
@@ -1143,6 +1293,70 @@ export default function Page(){
         <section className="card">
           <h1>新澳门六合彩｜9生肖优化预测系统</h1>
           <p className="sub">10套独立公式全部采用逐期滚动回测。重点修复繁体生肖「馬/龍/雞/豬」与简体「马/龙/鸡/猪」不一致造成的假性未中。</p>
+          <div className="combo-filter">
+            <div className="combo-filter-title">组合号码筛选</div>
+
+            <div className="combo-controls">
+              <div className="combo-control">
+                <label>九肖方案排名</label>
+                <select
+                  className="combo-select"
+                  value={filterZodiacRank}
+                  onChange={(e)=>setFilterZodiacRank(Number(e.target.value))}
+                >
+                  {ranking.map((item,index)=>(
+                    <option key={item.id} value={index+1}>
+                      第{index+1}名｜{item.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="combo-control">
+                <label>尾数方案排名</label>
+                <select
+                  className="combo-select"
+                  value={filterTailRank}
+                  onChange={(e)=>setFilterTailRank(Number(e.target.value))}
+                >
+                  {tRanking.map((item,index)=>(
+                    <option key={item.id} value={index+1}>
+                      第{index+1}名｜{item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="combo-control">
+                <label>头数方案排名</label>
+                <select
+                  className="combo-select"
+                  value={filterHeadRank}
+                  onChange={(e)=>setFilterHeadRank(Number(e.target.value))}
+                >
+                  {hRanking.map((item,index)=>(
+                    <option key={item.id} value={index+1}>
+                      第{index+1}名｜{item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                className="filter-btn"
+                onClick={runComboFilter}
+                disabled={!ranking.length || !tRanking.length || !hRanking.length}
+              >
+                筛选号码 →
+              </button>
+            </div>
+
+            <div className="combo-summary">
+              例：选择“九肖第1名 + 尾数第3名 + 头数第4名”，
+              系统只保留同时满足这3个方案的号码，并自动跳到筛选结果。
+            </div>
+          </div>
+
           <div className="cons">
             <div>
               <div className="muted">下一期综合9生肖｜第 {data?.nextExpect||'-'} 期</div>
@@ -1182,6 +1396,70 @@ export default function Page(){
           <strong>数据源提示：</strong>
           {data.warnings.join('；')}
         </div>
+      )}
+
+      {filterResult&&(
+        <section
+          className="card"
+          id="combo-filter-result"
+          style={{scrollMarginTop:16}}
+        >
+          <div className="cons" style={{marginTop:0}}>
+            <div>
+              <h2 style={{marginBottom:7}}>组合筛选结果</h2>
+              <div className="muted">
+                九肖第 {filterResult.zodiacRank} 名
+                {' + '}
+                尾数第 {filterResult.tailRank} 名
+                {' + '}
+                头数第 {filterResult.headRank} 名
+                {' ｜ '}
+                最终保留 {filterResult.rows.length} 个号码
+              </div>
+            </div>
+
+            <button
+              className="copy"
+              onClick={copyFilterNumbers}
+              disabled={!filterResult.rows.length}
+            >
+              {filterCopied?'已复制':'复制筛选号码'}
+            </button>
+          </div>
+
+          <div className="note" style={{marginTop:12}}>
+            <strong>九肖：</strong>
+            {(filterResult.zodiacStrategy?.picks||[]).join(' ')}
+            <br />
+            <strong>尾数：</strong>
+            {(filterResult.tailStrategy?.picks||[]).map(t=>`${t}尾`).join(' ')}
+            <br />
+            <strong>头数：</strong>
+            {(filterResult.headStrategy?.picks||[]).map(h=>`${h}头`).join(' ')}
+          </div>
+
+          {filterResult.rows.length ? (
+            <div className="filter-result-grid">
+              {filterResult.rows.map((row)=>(
+                <div
+                  className="filter-number"
+                  key={row.number}
+                >
+                  <strong>
+                    {String(row.number).padStart(2,'0')}
+                  </strong>
+                  <span>
+                    {row.zodiac}｜{row.head}头｜{row.tail}尾
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="error" style={{marginTop:12}}>
+              当前三个方案没有交集号码，请换一个方案组合再筛选。
+            </div>
+          )}
+        </section>
       )}
 
       <section className="card">
