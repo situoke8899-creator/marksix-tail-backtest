@@ -1085,6 +1085,10 @@ export default function Page(){
 
   useEffect(()=>{load();const t=setInterval(load,30000);return()=>clearInterval(t)},[])
 
+  const history=data?.history||[]
+  const analysisHistory=data?.analysisHistory?.length ? data.analysisHistory : history
+  const ranking=useMemo(()=>buildRanking(analysisHistory),[analysisHistory])
+
   useEffect(()=>{
     if(!analysisHistory.length) return
 
@@ -1095,10 +1099,6 @@ export default function Page(){
       )
     )
   },[analysisHistory,data?.nextExpect])
-
-  const history=data?.history||[]
-  const analysisHistory=data?.analysisHistory?.length ? data.analysisHistory : history
-  const ranking=useMemo(()=>buildRanking(analysisHistory),[analysisHistory])
   const con=useMemo(()=>consensus(ranking),[ranking])
   const hRanking=useMemo(()=>buildHeadRanking(analysisHistory),[analysisHistory])
   const hCon=useMemo(()=>headConsensus(hRanking),[hRanking])
