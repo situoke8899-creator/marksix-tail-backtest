@@ -1135,6 +1135,65 @@ function buildComboFilterResult(
 }
 
 
+
+function buildComboFrozenRows(
+  frozenRecords,
+  zodiacId,
+  tailId,
+  headId
+){
+  if(!zodiacId || !tailId || !headId) return []
+
+  return (frozenRecords || [])
+    .map((record)=>{
+      const z = record?.zodiac?.find(
+        (item)=>item.id===zodiacId
+      )
+      const t = record?.tail?.find(
+        (item)=>item.id===tailId
+      )
+      const h = record?.head?.find(
+        (item)=>item.id===headId
+      )
+
+      if(
+        typeof z?.hit !== 'boolean' ||
+        typeof t?.hit !== 'boolean' ||
+        typeof h?.hit !== 'boolean'
+      ){
+        return null
+      }
+
+      return {
+        expect: record.expect,
+        source: record.source,
+        actual: record.actual,
+        zodiacHit: z.hit,
+        tailHit: t.hit,
+        headHit: h.hit,
+        hit: z.hit && t.hit && h.hit,
+      }
+    })
+    .filter(Boolean)
+}
+
+function comboFrozenStats(rows,size){
+  const source=(rows || []).slice(0,size)
+  const results=source.map((row)=>row.hit)
+  const hitCount=source.filter((row)=>row.hit).length
+
+  return {
+    testedCount: source.length,
+    hitCount,
+    hitRate: source.length
+      ? (hitCount/source.length)*100
+      : 0,
+    maxMiss: maxMiss(results),
+    currentMiss: currentMiss(results),
+  }
+}
+
+
 function Z({z}){ return <span className="z">{z}</span> }
 function Ball({n,z,special=false}){ return <div className="bw"><span className={special?'ball sp':'ball'}>{String(n).padStart(2,'0')}</span><small>{z||'-'}</small></div> }
 
@@ -1191,6 +1250,39 @@ export default function Page(){
   )
   const latest=data?.latest
 
+  const comboFrozenRows=useMemo(()=>{
+    if(!filterResult) return []
+
+    return buildComboFrozenRows(
+      frozenRecords,
+      filterResult.zodiacId,
+      filterResult.tailId,
+      filterResult.headId
+    )
+  },[
+    frozenRecords,
+    filterResult?.zodiacId,
+    filterResult?.tailId,
+    filterResult?.headId,
+  ])
+
+  const comboStats20=useMemo(
+    ()=>comboFrozenStats(comboFrozenRows,20),
+    [comboFrozenRows]
+  )
+  const comboStats30=useMemo(
+    ()=>comboFrozenStats(comboFrozenRows,30),
+    [comboFrozenRows]
+  )
+  const comboStats50=useMemo(
+    ()=>comboFrozenStats(comboFrozenRows,50),
+    [comboFrozenRows]
+  )
+  const comboStats100=useMemo(
+    ()=>comboFrozenStats(comboFrozenRows,100),
+    [comboFrozenRows]
+  )
+
   async function copy(){
     const txt=`第${data?.nextExpect||'-'}期综合9生肖：${con.picks.join(' ')}`
     try{await navigator.clipboard.writeText(txt);setCopied(true);setTimeout(()=>setCopied(false),1200)}catch{alert(txt)}
@@ -1222,6 +1314,11 @@ export default function Page(){
       zodiacRank: filterZodiacRank,
       tailRank: filterTailRank,
       headRank: filterHeadRank,
+
+      zodiacId: zodiacStrategy?.id,
+      tailId: tailStrategy?.id,
+      headId: headStrategy?.id,
+
       zodiacStrategy,
       tailStrategy,
       headStrategy,
@@ -1277,6 +1374,17 @@ export default function Page(){
       .filter-number{padding:10px 6px;text-align:center;border-radius:11px;background:#091629;border:1px solid #2d415f}
       .filter-number strong{display:block;font-size:22px;color:#fde047}
       .filter-number span{display:block;margin-top:4px;color:#9db1ca;font-size:12px}
+      .combo-stat-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}
+      .combo-stat{padding:13px;border-radius:12px;background:#091629;border:1px solid #2d415f}
+      .combo-stat-label{color:#9db1ca;font-size:12px}
+      .combo-stat-value{font-size:24px;font-weight:900;margin-top:5px}
+      .combo-history-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:14px}
+      .combo-history-item{padding:10px;border-radius:11px;background:#091629;border:1px solid #2d415f}
+      .combo-history-top{display:flex;justify-content:space-between;gap:8px;align-items:center}
+      .combo-hit{color:#4ade80;font-weight:900}
+      .combo-miss{color:#fb7185;font-weight:900}
+      .combo-parts{margin-top:6px;color:#9db1ca;font-size:12px;line-height:1.6}
+
 
       .zlist,.hlist,.tlist{display:flex;flex-wrap:wrap;gap:6px}.z{display:inline-flex;min-width:34px;height:31px;padding:0 8px;align-items:center;justify-content:center;border-radius:9px;background:#22c55e;color:#052e16;border:1px solid #86efac;font-weight:900}.h{display:inline-flex;min-width:48px;height:31px;padding:0 8px;align-items:center;justify-content:center;border-radius:9px;background:#38bdf8;color:#082f49;border:1px solid #7dd3fc;font-weight:900}.t{display:inline-flex;min-width:46px;height:31px;padding:0 8px;align-items:center;justify-content:center;border-radius:9px;background:#a78bfa;color:#2e1065;border:1px solid #c4b5fd;font-weight:900}
       button{border:0;border-radius:10px;background:#38bdf8;color:#062238;font-weight:900;padding:10px 14px;cursor:pointer}.copy{background:linear-gradient(145deg,#fde047,#f97316)}
@@ -1285,7 +1393,7 @@ export default function Page(){
       .scroll{overflow:auto}table{width:100%;border-collapse:collapse;min-width:1180px}th,td{padding:10px;border-bottom:1px solid #26364d;text-align:left;font-size:13px}th{background:#08172a;color:#9db1ca}
       .rank{font-size:18px;font-weight:900}.rate{font-size:18px;font-weight:900}.good{color:#4ade80}.mid{color:#fde047}.low{color:#fb7185}.formula{color:#93c5fd}.dots{display:grid;grid-template-columns:repeat(10,18px);gap:3px;min-width:210px}.dot{width:18px;height:18px;border-radius:5px;background:#ef4444}.hit{background:#22c55e}
       .note{padding:14px;border-radius:12px;background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.25);line-height:1.7}.history{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.draw{padding:10px;border-radius:10px;background:#091629}.draw strong{display:block}
-      @media(max-width:900px){.page{padding:10px}.hero,.history{display:block}.card{padding:13px}.cons{display:block}.cons button{margin-top:12px}.draw{margin-bottom:8px}.combo-controls{grid-template-columns:1fr 1fr}.filter-result-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+      @media(max-width:900px){.page{padding:10px}.hero,.history{display:block}.card{padding:13px}.cons{display:block}.cons button{margin-top:12px}.draw{margin-bottom:8px}.combo-controls{grid-template-columns:1fr 1fr}.filter-result-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.combo-stat-grid{grid-template-columns:1fr 1fr}.combo-history-grid{grid-template-columns:1fr 1fr}}
     `}</style>
 
     <div className="wrap">
@@ -1459,13 +1567,104 @@ export default function Page(){
               当前三个方案没有交集号码，请换一个方案组合再筛选。
             </div>
           )}
+
+          <div style={{marginTop:20}}>
+            <h2 style={{marginBottom:8}}>
+              当前组合方案｜近期冻结中奖情况
+            </h2>
+
+            <div className="note">
+              这里不是显示“生肖1 / 头1 / 尾1”的固定方案。
+              当前统计严格对应你上面实际选择的：
+              <strong>
+                九肖第{filterResult.zodiacRank}名
+                {' + '}
+                尾数第{filterResult.tailRank}名
+                {' + '}
+                头数第{filterResult.headRank}名
+              </strong>。
+              同一期必须生肖、尾数、头数三个条件全部命中，才算这个组合“中”。
+              历史结果读取的是已经冻结的方案，所以以后刷新不会改变旧期中/未中。
+            </div>
+
+            <div className="combo-stat-grid">
+              {[
+                ['近20期',comboStats20],
+                ['近30期',comboStats30],
+                ['近50期',comboStats50],
+                ['近100期',comboStats100],
+              ].map(([label,stat])=>(
+                <div className="combo-stat" key={label}>
+                  <div className="combo-stat-label">{label}组合命中率</div>
+                  <div
+                    className={
+                      stat.hitRate>=70
+                        ? 'combo-stat-value combo-hit'
+                        : stat.hitRate>=55
+                        ? 'combo-stat-value'
+                        : 'combo-stat-value combo-miss'
+                    }
+                  >
+                    {pct(stat.hitRate)}
+                  </div>
+                  <div className="muted">
+                    命中 {stat.hitCount}/{stat.testedCount}
+                    {' ｜ '}最大连错 {stat.maxMiss}
+                    {' ｜ '}当前连错 {stat.currentMiss}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="combo-history-grid">
+              {comboFrozenRows.slice(0,20).map((row)=>(
+                <div
+                  className="combo-history-item"
+                  key={row.expect}
+                >
+                  <div className="combo-history-top">
+                    <strong>第 {row.expect} 期</strong>
+                    <span className={row.hit?'combo-hit':'combo-miss'}>
+                      {row.hit?'中':'未中'}
+                    </span>
+                  </div>
+
+                  <div className="combo-parts">
+                    生肖：
+                    <b className={row.zodiacHit?'combo-hit':'combo-miss'}>
+                      {row.zodiacHit?'中':'未中'}
+                    </b>
+                    {' ｜ '}
+                    尾：
+                    <b className={row.tailHit?'combo-hit':'combo-miss'}>
+                      {row.tailHit?'中':'未中'}
+                    </b>
+                    {' ｜ '}
+                    头：
+                    <b className={row.headHit?'combo-hit':'combo-miss'}>
+                      {row.headHit?'中':'未中'}
+                    </b>
+                    <br />
+                    特码：
+                    {String(row.actual?.specialNumber||0).padStart(2,'0')}
+                    {' ｜ '}
+                    {row.actual?.zodiac||'-'}
+                    {' ｜ '}
+                    {row.actual?.head}头
+                    {' ｜ '}
+                    {row.actual?.tail}尾
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
       )}
 
       <section className="card">
-        <h2>开奖记录永久冻结｜最近100期</h2>
+        <h2>全部方案冻结档案｜最近100期</h2>
         <div className="note">
-          下一期开奖前，系统会立即保存当时的9生肖、4头、8尾方案。
+          这里保存全部10档的原始冻结档案。上方“当前组合方案｜近期冻结中奖情况”则只显示你刚刚筛选的九肖 + 尾数 + 头数组合。下一期开奖前，系统会立即保存当时的9生肖、4头、8尾方案。
           开奖后只追加“中/未中”，不会重新计算旧方案。
           今天显示未中，明天刷新仍然是未中。
           第一次升级到本版本时，旧历史会严格使用“该期之前的数据”
